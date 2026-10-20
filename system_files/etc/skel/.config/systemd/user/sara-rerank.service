@@ -1,0 +1,14 @@
+[Unit]
+Description=SARA cross-encoder rerank service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/sara/rerank-service
+ExecStart=/usr/bin/python3 %h/sara/rerank-service/rerank_service.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

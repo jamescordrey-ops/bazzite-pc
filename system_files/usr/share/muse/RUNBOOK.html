@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PC setup runbook</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #101418; color: #e8ecef;
+         max-width: 44rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+  code { background: #1c232b; padding: 0.7rem 1rem; display: block; border-radius: 8px;
+         font-size: 1.15rem; color: #9fe8a9; user-select: all; }
+  h1 { font-size: 1.5rem; } h2 { font-size: 1.1rem; margin-top: 2rem; }
+  li { margin: 0.3rem 0; }
+  .dim { color: #9aa7b1; }
+</style>
+</head>
+<body>
+<h1>PC setup: one command</h1>
+<p>Open a terminal (Ctrl+Alt+T), click the line below to select it, copy it, paste it in the terminal, and press Enter.</p>
+<code>muse-finish</code>
+<p class="dim">Plug the install stick in first. The command finds the setup bundle on it. It asks for your password once or twice, and offers an optional Tailscale join at the end. LAN-only is fine.</p>
+
+<h2>What it sets up</h2>
+<ul>
+  <li>SARA, with her search store, keys, and rerank service, on port 8471</li>
+  <li>Ollama with SARA's embedding model</li>
+  <li>Brave, Stremio, Dropbox, Polychromatic (Razer), Solaar (Logitech)</li>
+  <li>OpenRazer for the keyboard, mouse, and Tartarus</li>
+  <li>Your AoE4 profile and hotkey files</li>
+</ul>
+
+<h2>What only you can do</h2>
+<ul>
+  <li>Sign into Steam, your browsers, and Dropbox</li>
+  <li>Let Steam download Age of Empires IV, or leave the Windows side in place so setup can copy the game files from it</li>
+  <li>Remap the Tartarus keys in Polychromatic, a few minutes of clicking</li>
+</ul>
+
+<h2>After it finishes</h2>
+<ul>
+  <li>SARA: <span class="dim">http://localhost:8471/</span></li>
+  <li>The command prints a pass or fail line for every piece, and saves a log at <span class="dim">~/muse-finish.log</span></li>
+</ul>
+</body>
+</html>

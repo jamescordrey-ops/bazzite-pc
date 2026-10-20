@@ -1,0 +1,139 @@
+#!/bin/bash
+# muse-finish: one-command setup for this PC after the image install.
+# Idempotent. Logs to ~/muse-finish.log and prints a plain summary.
+# Finds the setup bundle (a folder containing BUNDLE_MARKER and sara/)
+# on the install stick or in ~/muse-setup, then:
+#   1. lays down the SARA payload in ~/sara and starts her services
+#   2. installs Ollama and makes sure her embedding model is present
+#   3. installs the desktop apps (Brave, Stremio, Dropbox, Polychromatic,
+#      Solaar) as Flatpaks
+#   4. tries the OpenRazer install for the Razer gear
+#   5. restores the AoE4 profile and hotkey files from the bundle
+#   6. offers the Tailscale join (skippable; LAN-only is fine)
+#   7. runs health checks and prints pass or fail for each piece
+set -u
+LOG="$HOME/muse-finish.log"
+exec > >(tee -a "$LOG") 2>&1
+echo "=== muse-finish $(date) ==="
+PASS=(); FAIL=()
+ok()   { PASS+=("$1"); echo "PASS: $1"; }
+bad()  { FAIL+=("$1"); echo "FAIL: $1"; }
+
+# --- find the bundle ---
+BUNDLE=""
+for cand in "${1:-}" "$HOME/muse-setup" /run/media/$USER/*/muse-setup \
+            /run/media/$USER/*/"Linux conversion"/02-setup-bundle \
+            /mnt/*/muse-setup; do
+    [ -n "$cand" ] && [ -f "$cand/BUNDLE_MARKER" ] && { BUNDLE="$cand"; break; }
+done
+if [ -z "$BUNDLE" ]; then
+    echo "Setup bundle not found. Plug in the install stick, or copy the"
+    echo "bundle to ~/muse-setup, then run muse-finish again."
+    exit 1
+fi
+echo "Bundle: $BUNDLE"
+
+# --- SARA payload ---
+if [ -d "$BUNDLE/sara" ]; then
+    mkdir -p "$HOME/sara"
+    cp -a "$BUNDLE/sara/." "$HOME/sara/"
+    find "$HOME/sara" -name '*_key.txt' -exec chmod 600 {} + 2>/dev/null
+    ok "SARA payload copied to ~/sara"
+else
+    bad "SARA payload missing from bundle"
+fi
+
+# --- Ollama + embedding model ---
+if ! command -v ollama >/dev/null 2>&1; then
+    echo "Installing Ollama (official script, asks for sudo)..."
+    curl -fsSL https://ollama.com/install.sh | sh || echo "Ollama install did not finish."
+fi
+if command -v ollama >/dev/null 2>&1; then
+    if [ -d "$BUNDLE/ollama-models" ]; then
+        mkdir -p "$HOME/.ollama/models"
+        cp -a "$BUNDLE/ollama-models/." "$HOME/.ollama/models/" || true
+    fi
+    if ollama list 2>/dev/null | grep -q 'qwen3-embedding:4b-q8_0'; then
+        ok "Ollama embedding model present"
+    else
+        echo "Pulling the embedding model..."
+        if ollama pull qwen3-embedding:4b-q8_0; then ok "Ollama embedding model pulled"
+        else bad "Ollama embedding model not available"; fi
+    fi
+else
+    bad "Ollama not installed"
+fi
+
+# --- SARA services (user units, shipped in the image skeleton) ---
+systemctl --user daemon-reload 2>/dev/null || true
+loginctl enable-linger "$USER" 2>/dev/null || sudo loginctl enable-linger "$USER" || true
+if systemctl --user enable --now sara-rerank.service sara.service 2>/dev/null; then
+    ok "SARA services enabled"
+else
+    bad "SARA services did not enable"
+fi
+
+# --- Desktop apps as Flatpaks (failures are noted, never fatal) ---
+flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo 2>/dev/null || true
+for app in com.brave.Browser com.stremio.Stremio com.dropbox.Client \
+           app.polychromatic.controller io.github.pwr_solaar.solaar; do
+    if flatpak install -y --noninteractive flathub "$app" >/dev/null 2>&1; then
+        ok "Flatpak $app"
+    else
+        bad "Flatpak $app (install later from the app store)"
+    fi
+done
+
+# --- OpenRazer for the Razer keyboard, mouse, and Tartarus ---
+if command -v ujust >/dev/null 2>&1; then
+    echo "Trying OpenRazer via ujust (may ask for sudo)..."
+    ujust install-openrazer || echo "OpenRazer step did not finish; the Razer gear still works as plain USB."
+fi
+
+# --- AoE4 profile and hotkeys ---
+if [ -d "$BUNDLE/aoe4-profile" ]; then
+    STEAMDIR="$HOME/.local/share/Steam"
+    if [ -d "$BUNDLE/aoe4-profile/userdata" ]; then
+        mkdir -p "$STEAMDIR/userdata"
+        cp -a "$BUNDLE/aoe4-profile/userdata/." "$STEAMDIR/userdata/" && ok "AoE4 Steam userdata restored"
+    fi
+    PFX="$STEAMDIR/steamapps/compatdata/1466860/pfx/drive_c/users/steamuser/Documents/My Games/Age of Empires IV"
+    if [ -d "$BUNDLE/aoe4-profile/my-games" ]; then
+        if [ -d "$(dirname "$PFX")" ]; then
+            mkdir -p "$PFX"; cp -a "$BUNDLE/aoe4-profile/my-games/." "$PFX/" && ok "AoE4 profile restored into the game prefix"
+        else
+            mkdir -p "$HOME/aoe4-profile-staged"; cp -a "$BUNDLE/aoe4-profile/my-games/." "$HOME/aoe4-profile-staged/"
+            echo "NOTE: AoE4 not launched yet, so the profile is staged in ~/aoe4-profile-staged."
+            echo "Launch the game once, quit, then run muse-finish again."
+        fi
+    fi
+fi
+
+# --- Tailscale: optional, his call, LAN-only is a valid end state ---
+if ! tailscale status >/dev/null 2>&1; then
+    read -rsp "Optional: paste a Tailscale auth key to join, or press Enter to stay LAN-only: " TSKEY
+    echo
+    if [ -n "${TSKEY:-}" ]; then
+        sudo tailscale up --auth-key="$TSKEY" --ssh --hostname=pc \
+            && ok "Tailscale joined" || bad "Tailscale join failed (re-run: sudo tailscale up)"
+        unset TSKEY
+    else
+        echo "Staying LAN-only. Join later with: sudo tailscale up --ssh --hostname=pc"
+    fi
+fi
+
+# --- Health checks ---
+sleep 5
+if curl -fsS http://localhost:8471/health >/dev/null 2>&1; then ok "SARA answers on 8471"
+else bad "SARA not answering yet (check: systemctl --user status sara)"; fi
+if curl -fsS http://localhost:8472/health >/dev/null 2>&1; then ok "Rerank service answers on 8472"
+else echo "NOTE: rerank service not answering; SARA still works without it, slower ranking."; fi
+
+mkdir -p "$HOME/.config/muse"; touch "$HOME/.config/muse/setup-done"
+sudo mkdir -p /var/lib/muse && sudo touch /var/lib/muse/finish-done 2>/dev/null || true
+
+echo
+echo "=== Summary ==="
+echo "Passed: ${#PASS[@]}  Failed: ${#FAIL[@]}"
+for f in "${FAIL[@]:-}"; do [ -n "$f" ] && echo "  failed: $f"; done
+echo "Full log: $LOG"

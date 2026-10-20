@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Muse setup runbook
+Exec=/usr/bin/muse-setup-launcher
+X-GNOME-Autostart-enabled=true
+NoDisplay=true

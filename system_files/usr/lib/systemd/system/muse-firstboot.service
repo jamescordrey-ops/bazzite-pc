@@ -1,0 +1,13 @@
+[Unit]
+Description=Muse first-boot setup helper (PC)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/muse/finish-done
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/libexec/muse-firstboot.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

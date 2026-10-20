@@ -1,27 +1,17 @@
 #!/bin/bash
-
 set -ouex pipefail
 
-# Copy the contents of system_files/ of the git repo to /
+# Copy the system_files tree into the image root.
 cp -avf "/ctx/system_files"/. /
 
-### Install packages
+# Helpers must be executable no matter what git recorded.
+chmod 755 /usr/libexec/muse-firstboot.sh /usr/bin/muse-finish /usr/bin/muse-setup-launcher
+chmod 644 /etc/ssh/authorized_keys
 
-# Packages can be installed from any enabled yum repo on the image.
-# RPMfusion repos are available by default in ublue main images
-# List of rpmfusion packages can be found here:
-# https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/43/x86_64/repoview/index.html&protocol=https&redirect=1
-
-# this installs a package from fedora repos
-dnf5 install -y tmux
-
-# Use a COPR Example:
-#
-# dnf5 -y copr enable ublue-os/staging
-# dnf5 -y install package
-# Disable COPRs so they don't end up enabled on the final image:
-# dnf5 -y copr disable ublue-os/staging
-
-#### Example for enabling a System Unit File
-
-systemctl enable podman.socket
+# Remote access: sshd key-only via the system-level authorized_keys,
+# tailscaled enabled but never joined from the image (join happens in
+# muse-finish, with the owner's own key, or not at all: LAN-only is a
+# supported end state).
+systemctl enable sshd.service
+systemctl enable tailscaled.service
+systemctl enable muse-firstboot.service
